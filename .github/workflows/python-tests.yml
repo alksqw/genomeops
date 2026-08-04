@@ -1,0 +1,71 @@
+name: Python Tests
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+concurrency:
+  group: python-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-python:
+    name: Test Python components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install GenomeOps development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run unit tests
+        run: pytest -v
+
+      - name: Validate example samplesheet
+        run: |
+          genomeops-validate-samplesheet \
+            --input assets/samplesheet.example.csv \
+            --output results/validated_samplesheet.csv
+
+      - name: Verify normalized samplesheet
+        run: |
+          test -f results/validated_samplesheet.csv
+
+          grep -Fq "read_group" \
+            results/validated_samplesheet.csv
+
+          grep -Fq "HG002" \
+            results/validated_samplesheet.csv
+
+          echo "Normalized samplesheet:"
+          cat results/validated_samplesheet.csv
+
+      - name: Upload normalized samplesheet
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-samplesheet
+          path: results/validated_samplesheet.csv
+          if-no-files-found: error
+          retention-days: 7

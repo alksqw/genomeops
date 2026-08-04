@@ -20,6 +20,16 @@ echo
 echo "Starting GenomeOps environment setup..."
 echo
 
+echo "Creating the GenomeOps Python environment..."
+
+python -m venv "${PROJECT_ROOT}/.venv"
+
+source "${PROJECT_ROOT}/.venv/bin/activate"
+
+python -m pip install --upgrade pip
+
+python -m pip install -e ".[dev]"
+
 bash scripts/install_nextflow.sh
 bash scripts/install_nf_test.sh
 bash scripts/install_nf_core.sh

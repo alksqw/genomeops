@@ -23,6 +23,7 @@
         "redhat.vscode-yaml"
       ],
       "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
         "editor.formatOnSave": true,
         "files.trimTrailingWhitespace": true,
         "terminal.integrated.defaultProfile.linux": "bash"

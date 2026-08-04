@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genomeops"
+version = "0.1.0"
+description = "Reproducible germline WGS/WES bioinformatics pipeline."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3"
+]
+
+[project.scripts]
+genomeops-validate-samplesheet = "genomeops.samplesheet:main"
+
+[tool.setuptools.packages.find]
+include = ["genomeops*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers"
+]
