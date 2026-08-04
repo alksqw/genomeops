@@ -1,10 +1,9 @@
 {
   "name": "GenomeOps Development",
-
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {},
+    "ghcr.io/devcontainers/features/git-lfs:1": {},
     "ghcr.io/devcontainers/features/java:1": {
       "version": "21"
     },
@@ -13,9 +12,7 @@
     },
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
-
   "postCreateCommand": "bash .devcontainer/bootstrap.sh",
-
   "customizations": {
     "vscode": {
       "extensions": [
@@ -32,6 +29,5 @@
       }
     }
   },
-
   "remoteUser": "vscode"
 }
