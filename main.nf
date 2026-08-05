@@ -5,23 +5,27 @@ process VALIDATE_SAMPLESHEET {
 
     tag "${input_samplesheet.simpleName}"
 
-    publishDir "${params.outdir}/pipeline_info", mode: 'copy', overwrite: true
+    publishDir "${params.outdir}/pipeline_info",
+        mode: 'copy',
+        overwrite: true
 
     input:
     path input_samplesheet
 
     output:
-    path 'validated_samplesheet.csv', emit: validated_samplesheet
+    path 'validated_samplesheet.csv',
+        emit: validated_samplesheet
 
     script:
     def checkFilesArgument = params.check_files
-        ? ' --check-files'
+        ? '--check-files'
         : ''
 
     """
-    python ${projectDir}/bin/validate_samplesheet.py \
-        --input ${input_samplesheet} \
-        --output validated_samplesheet.csv${checkFilesArgument}
+    python "${projectDir}/bin/validate_samplesheet.py" \
+        --input "${input_samplesheet}" \
+        --output validated_samplesheet.csv \
+        ${checkFilesArgument}
     """
 }
 
@@ -30,18 +34,21 @@ process SUMMARIZE_SAMPLESHEET {
 
     tag 'validated-input'
 
-    publishDir "${params.outdir}/pipeline_info", mode: 'copy', overwrite: true
+    publishDir "${params.outdir}/pipeline_info",
+        mode: 'copy',
+        overwrite: true
 
     input:
     path validated_samplesheet
 
     output:
-    path 'samplesheet_summary.txt', emit: summary
+    path 'samplesheet_summary.txt',
+        emit: summary
 
     script:
     """
     awk 'END { print "Validated rows: " (NR - 1) }' \
-        ${validated_samplesheet} \
+        "${validated_samplesheet}" \
         > samplesheet_summary.txt
     """
 }
@@ -51,7 +58,10 @@ workflow {
 
     if (!params.input) {
         error(
-            "Missing required parameter: --input\n" + "Example:\n" + "nextflow run main.nf " + "--input assets/samplesheet.example.csv"
+            "Missing required parameter: --input\n" +
+            "Example:\n" +
+            "nextflow run main.nf " +
+            "--input assets/samplesheet.example.csv"
         )
     }
 
