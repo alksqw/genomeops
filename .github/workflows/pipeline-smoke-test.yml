@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   smoke-test:
-    name: Run minimal Nextflow pipeline
+    name: Run samplesheet validation pipeline
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -34,29 +34,60 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
       - name: Install Nextflow
         run: bash scripts/install_nextflow.sh
 
-      - name: Run minimal pipeline
+      - name: Run samplesheet validation pipeline
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          nextflow run main.nf -ansi-log false
 
-      - name: Verify pipeline output
+          nextflow run main.nf \
+            --input assets/samplesheet.example.csv \
+            --outdir results \
+            -ansi-log false
+
+      - name: Verify validated samplesheet
         run: |
-          test -f results/hello.txt
-          grep -Fxq "GenomeOps pipeline works" results/hello.txt
+          test -f \
+            results/pipeline_info/validated_samplesheet.csv
 
-          echo "Generated output:"
-          cat results/hello.txt
+          grep -Fq \
+            "read_group" \
+            results/pipeline_info/validated_samplesheet.csv
+
+          grep -Fq \
+            "HG002" \
+            results/pipeline_info/validated_samplesheet.csv
+
+          echo "Validated samplesheet:"
+          cat results/pipeline_info/validated_samplesheet.csv
+
+      - name: Verify samplesheet summary
+        run: |
+          test -f \
+            results/pipeline_info/samplesheet_summary.txt
+
+          grep -Fxq \
+            "Validated rows: 2" \
+            results/pipeline_info/samplesheet_summary.txt
+
+          echo "Samplesheet summary:"
+          cat results/pipeline_info/samplesheet_summary.txt
 
           echo
-          echo "[OK] Minimal GenomeOps pipeline completed successfully."
+          echo "[OK] Samplesheet pipeline completed successfully."
 
-      - name: Upload pipeline output
+      - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-smoke-test-output
-          path: results/
+          name: genomeops-samplesheet-pipeline-output
+          path: |
+            results/pipeline_info/
+            .nextflow.log
           if-no-files-found: error
           retention-days: 7
