@@ -49,7 +49,7 @@ jobs:
         run: |
           genomeops-validate-samplesheet \
             --input assets/samplesheet.example.csv \
-            --output results/validated_samplesheet.csv
+            --output results/validated_samplesheet.csv \
             --base-dir "$GITHUB_WORKSPACE" \
             --check-files
 
