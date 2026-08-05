@@ -188,6 +188,81 @@ process BWA_MEM2_ALIGN {
     """
 }
 
+process SAMTOOLS_SORT_INDEX_QC {
+
+    tag "${meta.sample}/${meta.lane}"
+
+    label 'process_medium'
+
+    container 'quay.io/biocontainers/samtools:1.24--h9dcdb79_1'
+
+    publishDir {
+        "${params.outdir}/alignment/" +
+        "${meta.sample}/${meta.lane}"
+    },
+        mode: 'copy',
+        overwrite: true
+
+    input:
+    tuple val(meta), path(sam)
+
+    output:
+    tuple val(meta), path("${meta.id}.sorted.bam"),
+        path("${meta.id}.sorted.bam.bai"),
+        emit: bam
+
+    tuple val(meta), path("${meta.id}.flagstat.txt"),
+        emit: flagstat
+
+    tuple val(meta), path("${meta.id}.idxstats.txt"),
+        emit: idxstats
+
+    tuple val(meta), path("${meta.id}.stats.txt"),
+        emit: stats
+
+    tuple val(meta), path("${meta.id}.quickcheck.txt"),
+        emit: quickcheck
+
+    path 'samtools.version.txt',
+        emit: version
+
+    script:
+    """
+    samtools sort \
+        -@ ${task.cpus} \
+        -O BAM \
+        -o "${meta.id}.sorted.bam" \
+        "${sam}"
+
+    samtools index \
+        -@ ${task.cpus} \
+        "${meta.id}.sorted.bam"
+
+    samtools quickcheck \
+        -v \
+        "${meta.id}.sorted.bam"
+
+    printf 'OK\\n' \
+        > "${meta.id}.quickcheck.txt"
+
+    samtools flagstat \
+        -@ ${task.cpus} \
+        "${meta.id}.sorted.bam" \
+        > "${meta.id}.flagstat.txt"
+
+    samtools idxstats \
+        "${meta.id}.sorted.bam" \
+        > "${meta.id}.idxstats.txt"
+
+    samtools stats \
+        -@ ${task.cpus} \
+        "${meta.id}.sorted.bam" \
+        > "${meta.id}.stats.txt"
+
+    samtools --version \
+        > samtools.version.txt
+    """
+}
 
 workflow {
 
@@ -263,7 +338,11 @@ workflow {
         BWA_MEM2_INDEX.out.indexed_reference
     )
 
-    BWA_MEM2_ALIGN(
+        BWA_MEM2_ALIGN(
         alignment_inputs_ch
+    )
+
+    SAMTOOLS_SORT_INDEX_QC(
+        BWA_MEM2_ALIGN.out.sam
     )
 }

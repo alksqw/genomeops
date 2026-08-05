@@ -84,6 +84,12 @@ jobs:
           docker run --rm \
             quay.io/biocontainers/bwa-mem2:2.3--he70b90d_0 \
             bwa-mem2 version
+                    docker pull \
+            quay.io/biocontainers/samtools:1.24--h9dcdb79_1
+
+          docker run --rm \
+            quay.io/biocontainers/samtools:1.24--h9dcdb79_1 \
+            samtools --version
 
       - name: Run GenomeOps pipeline
         run: |
@@ -220,6 +226,108 @@ jobs:
 
           echo "[OK] BWA-MEM2 alignments are correct."
 
+      - name: Verify sorted BAM outputs
+        run: |
+          samtools_image="$(
+            printf '%s' \
+              'quay.io/biocontainers/' \
+              'samtools:1.24--h9dcdb79_1'
+          )"
+
+          bam_count="$(
+            find results/alignment \
+              -type f \
+              -name '*.sorted.bam' \
+            | wc -l
+          )"
+
+          bai_count="$(
+            find results/alignment \
+              -type f \
+              -name '*.sorted.bam.bai' \
+            | wc -l
+          )"
+
+          echo "BAM files: ${bam_count}"
+          echo "BAI files: ${bai_count}"
+
+          test "${bam_count}" -eq 2
+          test "${bai_count}" -eq 2
+
+          while IFS= read -r bam
+          do
+            echo "Checking ${bam}"
+
+            test -f "${bam}.bai"
+
+            stem="${bam%.sorted.bam}"
+
+            test -s "${stem}.flagstat.txt"
+            test -s "${stem}.idxstats.txt"
+            test -s "${stem}.stats.txt"
+
+            grep -Fxq \
+              "OK" \
+              "${stem}.quickcheck.txt"
+
+            docker run --rm \
+              -u "$(id -u):$(id -g)" \
+              -v "$GITHUB_WORKSPACE:/workspace" \
+              -w /workspace \
+              "${samtools_image}" \
+              samtools quickcheck \
+                -v \
+                "${bam}"
+
+            records="$(
+              docker run --rm \
+                -u "$(id -u):$(id -g)" \
+                -v "$GITHUB_WORKSPACE:/workspace" \
+                -w /workspace \
+                "${samtools_image}" \
+                samtools view \
+                  -c \
+                  "${bam}"
+            )"
+
+            mapped="$(
+              docker run --rm \
+                -u "$(id -u):$(id -g)" \
+                -v "$GITHUB_WORKSPACE:/workspace" \
+                -w /workspace \
+                "${samtools_image}" \
+                samtools view \
+                  -c \
+                  -F 4 \
+                  "${bam}"
+            )"
+
+            echo "Records: ${records}"
+            echo "Mapped: ${mapped}"
+
+            test "${records}" -ge 4
+            test "${mapped}" -ge 4
+
+            docker run --rm \
+              -u "$(id -u):$(id -g)" \
+              -v "$GITHUB_WORKSPACE:/workspace" \
+              -w /workspace \
+              "${samtools_image}" \
+              samtools view \
+                -H \
+                "${bam}" \
+            | grep -Fq \
+                "SO:coordinate"
+
+          done < <(
+            find results/alignment \
+              -type f \
+              -name '*.sorted.bam' \
+            | sort
+          )
+
+          echo "[OK] Sorted and indexed BAM files are valid."
+
       - name: Show generated files
         run: |
           find results \
@@ -231,7 +339,7 @@ jobs:
       - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-alignment-output
+          name: genomeops-sorted-bam-output
           path: |
             results/pipeline_info/
             results/fastqc/
