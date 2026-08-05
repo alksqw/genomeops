@@ -58,7 +58,7 @@ process FASTQC {
     container 'quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0'
 
     publishDir {
-        "${params.outdir}/fastqc/${meta.sample}/${meta.lane}"
+        "${params.outdir}/fastqc/" + "${meta.sample}/${meta.lane}"
     }, mode: 'copy', overwrite: true
 
     input:
@@ -91,22 +91,17 @@ process MULTIQC {
 
     container 'multiqc/multiqc:v1.35'
 
-    publishDir "${params.outdir}/multiqc",
-        mode: 'copy',
-        overwrite: true
+    publishDir "${params.outdir}/multiqc", mode: 'copy', overwrite: true
 
     input:
     path 'fastqc/*'
 
     output:
-    path 'multiqc_report.html',
-        emit: report
+    path 'multiqc_report.html', emit: report
 
-    path 'multiqc_data',
-        emit: data
+    path 'multiqc_data', emit: data
 
-    path 'multiqc.version.txt',
-        emit: version
+    path 'multiqc.version.txt', emit: version
 
     script:
     """
@@ -122,11 +117,89 @@ process MULTIQC {
 }
 
 
+process BWA_MEM2_INDEX {
+
+    tag "${reference.simpleName}"
+
+    label 'process_medium'
+
+    container 'quay.io/biocontainers/' + 'bwa-mem2:2.2.1--hd03093a_2'
+
+    publishDir "${params.outdir}/reference/bwa-mem2", mode: 'copy', overwrite: true
+
+    input:
+    path reference
+
+    output:
+    tuple path(reference), path("${reference.name}.*"), emit: indexed_reference
+
+    path 'bwa-mem2.index.version.txt', emit: version
+
+    script:
+    """
+    bwa-mem2 index "${reference}"
+
+    bwa-mem2 version \
+        > bwa-mem2.index.version.txt \
+        2>&1
+    """
+}
+
+
+process BWA_MEM2_ALIGN {
+
+    tag "${meta.sample}/${meta.lane}"
+
+    label 'process_medium'
+
+    container 'quay.io/biocontainers/' + 'bwa-mem2:2.2.1--hd03093a_2'
+
+    publishDir {
+        "${params.outdir}/alignment/" + "${meta.sample}/${meta.lane}"
+    }, mode: 'copy', overwrite: true
+
+    input:
+    tuple val(meta), path(reads), path(reference), path(index_files)
+
+    output:
+    tuple val(meta), path("${meta.id}.sam"), emit: sam
+
+    tuple val(meta), path("${meta.id}.bwa-mem2.log"), emit: log
+
+    tuple val(meta), path("${meta.id}.bwa-mem2.version.txt"), emit: version
+
+    script:
+    def readGroup = ['@RG', "ID:${meta.id}", "SM:${meta.sample}", "LB:${meta.library}", "PL:${meta.platform}", "PU:${meta.lane}", "CN:${meta.center}"].join('\\t')
+
+    """
+    bwa-mem2 mem \
+        -M \
+        -t ${task.cpus} \
+        -R '${readGroup}' \
+        "${reference}" \
+        "${reads[0]}" \
+        "${reads[1]}" \
+        > "${meta.id}.sam" \
+        2> "${meta.id}.bwa-mem2.log"
+
+    bwa-mem2 version \
+        > "${meta.id}.bwa-mem2.version.txt" \
+        2>&1
+    """
+}
+
+
 workflow {
 
     if (!params.input) {
         error(
-            "Missing required parameter: --input\n" + "Example:\n" + "nextflow run main.nf " + "--input assets/samplesheet.example.csv " + "-profile docker"
+            "Missing required parameter: --input\n" + "Example:\n" + "nextflow run main.nf " + "--input assets/samplesheet.example.csv " + "--reference tests/data/reference/" + "test_reference.fa " + "-profile docker"
+        )
+    }
+
+    if (!params.reference) {
+        error(
+            "Missing required parameter: --reference\n" + "Example:\n" + "nextflow run main.nf " + "--input assets/samplesheet.example.csv " + "--reference tests/data/reference/" + "test_reference.fa " + "-profile docker"
         )
     }
 
@@ -135,8 +208,17 @@ workflow {
         checkIfExists: true
     )
 
+    reference_ch = Channel.fromPath(
+        params.reference,
+        checkIfExists: true
+    )
+
     VALIDATE_SAMPLESHEET(
         input_samplesheet_ch
+    )
+
+    BWA_MEM2_INDEX(
+        reference_ch
     )
 
     validated_samplesheet_ch = VALIDATE_SAMPLESHEET.out.validated_samplesheet
@@ -167,13 +249,21 @@ workflow {
     )
 
     fastqc_archives_ch = FASTQC.out.zip
-        .map { meta, zip_files ->
-            zip_files
+        .map { meta, zipFiles ->
+            zipFiles
         }
         .flatten()
         .collect()
 
     MULTIQC(
         fastqc_archives_ch
+    )
+
+    alignment_inputs_ch = fastq_pairs_ch.combine(
+        BWA_MEM2_INDEX.out.indexed_reference
+    )
+
+    BWA_MEM2_ALIGN(
+        alignment_inputs_ch
     )
 }

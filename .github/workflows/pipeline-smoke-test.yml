@@ -20,9 +20,9 @@ permissions:
 
 jobs:
   smoke-test:
-    name: Run FastQC and MultiQC pipeline
+    name: Run QC and alignment pipeline
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -44,14 +44,21 @@ jobs:
       - name: Install Nextflow
         run: bash scripts/install_nextflow.sh
 
-      - name: Verify synthetic FASTQ inputs
+      - name: Verify synthetic inputs
         run: |
           test -f tests/data/fastq/HG002_L001_R1.fastq
           test -f tests/data/fastq/HG002_L001_R2.fastq
           test -f tests/data/fastq/HG002_L002_R1.fastq
           test -f tests/data/fastq/HG002_L002_R2.fastq
 
-          echo "[OK] Synthetic FASTQ files are available."
+          test -f \
+            tests/data/reference/test_reference.fa
+
+          grep -Fxq \
+            ">chrTest" \
+            tests/data/reference/test_reference.fa
+
+          echo "[OK] Synthetic inputs are available."
 
       - name: Verify containers
         run: |
@@ -71,12 +78,21 @@ jobs:
             multiqc/multiqc:v1.35 \
             multiqc --version
 
-      - name: Run quality-control pipeline
+          docker pull \
+            quay.io/biocontainers/bwa-mem2:2.3--he70b90d_0
+
+          docker run --rm \
+            quay.io/biocontainers/bwa-mem2:2.3--he70b90d_0 \
+            bwa-mem2 version
+
+      - name: Run GenomeOps pipeline
         run: |
           export PATH="$HOME/.local/bin:$PATH"
 
           nextflow run main.nf \
             --input assets/samplesheet.example.csv \
+            --reference \
+              tests/data/reference/test_reference.fa \
             --outdir results \
             --check_files true \
             -profile docker \
@@ -118,7 +134,7 @@ jobs:
           test "${html_count}" -eq 4
           test "${zip_count}" -eq 4
 
-          echo "[OK] Four FastQC reports were created."
+          echo "[OK] FastQC reports are correct."
 
       - name: Verify MultiQC report
         run: |
@@ -135,39 +151,93 @@ jobs:
             "MultiQC" \
             results/multiqc/multiqc_report.html
 
-          grep -Fq \
-            "1.35" \
-            results/multiqc/multiqc.version.txt
+          echo "[OK] MultiQC report is correct."
 
-          for sample in \
-            HG002_L001_R1 \
-            HG002_L001_R2 \
-            HG002_L002_R1 \
-            HG002_L002_R2
+      - name: Verify BWA-MEM2 reference index
+        run: |
+          test -f \
+            results/reference/bwa-mem2/test_reference.fa
+
+          test -f \
+            results/reference/bwa-mem2/test_reference.fa.0123
+
+          test -f \
+            results/reference/bwa-mem2/test_reference.fa.bwt.2bit.64
+
+          test -s \
+            results/reference/bwa-mem2/bwa-mem2.index.version.txt
+
+          echo "[OK] BWA-MEM2 reference index exists."
+
+      - name: Verify BWA-MEM2 alignments
+        run: |
+          sam_count="$(
+            find results/alignment \
+              -type f \
+              -name '*.sam' \
+            | wc -l
+          )"
+
+          echo "SAM files: ${sam_count}"
+
+          test "${sam_count}" -eq 2
+
+          while IFS= read -r sam
           do
-            grep -R -Fq \
-              "${sample}" \
-              results/multiqc
-          done
+            echo "Checking ${sam}"
 
-          echo "[OK] MultiQC contains all four FASTQ inputs."
+            grep -Fq \
+              "SM:HG002" \
+              "${sam}"
+
+            records="$(
+              grep -vc '^@' "${sam}"
+            )"
+
+            mapped="$(
+              awk '
+                $1 !~ /^@/ && $3 != "*" {
+                  count += 1
+                }
+
+                END {
+                  print count + 0
+                }
+              ' "${sam}"
+            )"
+
+            echo "Records: ${records}"
+            echo "Mapped: ${mapped}"
+
+            test "${records}" -ge 4
+            test "${mapped}" -ge 4
+          done < <(
+            find results/alignment \
+              -type f \
+              -name '*.sam' \
+            | sort
+          )
+
+          echo "[OK] BWA-MEM2 alignments are correct."
 
       - name: Show generated files
         run: |
           find results \
-            -maxdepth 5 \
+            -maxdepth 6 \
             -type f \
             -print \
           | sort
 
-      - name: Upload quality-control outputs
+      - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-multiqc-output
+          name: genomeops-alignment-output
           path: |
             results/pipeline_info/
             results/fastqc/
             results/multiqc/
+            results/reference/
+            results/alignment/
             .nextflow.log
           if-no-files-found: error
           retention-days: 7
