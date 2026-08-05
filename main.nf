@@ -83,6 +83,45 @@ process FASTQC {
 }
 
 
+process MULTIQC {
+
+    tag 'fastqc-summary'
+
+    label 'process_low'
+
+    container 'multiqc/multiqc:v1.35'
+
+    publishDir "${params.outdir}/multiqc",
+        mode: 'copy',
+        overwrite: true
+
+    input:
+    path 'fastqc/*'
+
+    output:
+    path 'multiqc_report.html',
+        emit: report
+
+    path 'multiqc_data',
+        emit: data
+
+    path 'multiqc.version.txt',
+        emit: version
+
+    script:
+    """
+    multiqc \
+        --force \
+        --module fastqc \
+        --require-logs \
+        --outdir . \
+        fastqc
+
+    multiqc --version > multiqc.version.txt
+    """
+}
+
+
 workflow {
 
     if (!params.input) {
@@ -96,7 +135,9 @@ workflow {
         checkIfExists: true
     )
 
-    VALIDATE_SAMPLESHEET(input_samplesheet_ch)
+    VALIDATE_SAMPLESHEET(
+        input_samplesheet_ch
+    )
 
     validated_samplesheet_ch = VALIDATE_SAMPLESHEET.out.validated_samplesheet
 
@@ -121,5 +162,18 @@ workflow {
             tuple(meta, reads)
         }
 
-    FASTQC(fastq_pairs_ch)
+    FASTQC(
+        fastq_pairs_ch
+    )
+
+    fastqc_archives_ch = FASTQC.out.zip
+        .map { meta, zip_files ->
+            zip_files
+        }
+        .flatten()
+        .collect()
+
+    MULTIQC(
+        fastqc_archives_ch
+    )
 }

@@ -20,9 +20,9 @@ permissions:
 
 jobs:
   smoke-test:
-    name: Run FastQC pipeline
+    name: Run FastQC and MultiQC pipeline
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Check out repository
@@ -53,7 +53,7 @@ jobs:
 
           echo "[OK] Synthetic FASTQ files are available."
 
-      - name: Verify Docker
+      - name: Verify containers
         run: |
           docker version
 
@@ -64,7 +64,14 @@ jobs:
             quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0 \
             fastqc --version
 
-      - name: Run FastQC pipeline
+          docker pull \
+            multiqc/multiqc:v1.35
+
+          docker run --rm \
+            multiqc/multiqc:v1.35 \
+            multiqc --version
+
+      - name: Run quality-control pipeline
         run: |
           export PATH="$HOME/.local/bin:$PATH"
 
@@ -105,25 +112,45 @@ jobs:
             | wc -l
           )"
 
-          echo "HTML reports: ${html_count}"
-          echo "ZIP archives: ${zip_count}"
+          echo "FastQC HTML reports: ${html_count}"
+          echo "FastQC ZIP archives: ${zip_count}"
 
           test "${html_count}" -eq 4
           test "${zip_count}" -eq 4
 
-          first_html="$(
-            find results/fastqc \
-              -type f \
-              -name '*_fastqc.html' \
-            | sort \
-            | head -n 1
-          )"
+          echo "[OK] Four FastQC reports were created."
+
+      - name: Verify MultiQC report
+        run: |
+          test -f \
+            results/multiqc/multiqc_report.html
+
+          test -d \
+            results/multiqc/multiqc_data
+
+          test -f \
+            results/multiqc/multiqc.version.txt
 
           grep -Fq \
-            "FastQC Report" \
-            "${first_html}"
+            "MultiQC" \
+            results/multiqc/multiqc_report.html
 
-          echo "[OK] Four FastQC reports were created."
+          grep -Fq \
+            "1.35" \
+            results/multiqc/multiqc.version.txt
+
+          for sample in \
+            HG002_L001_R1 \
+            HG002_L001_R2 \
+            HG002_L002_R1 \
+            HG002_L002_R2
+          do
+            grep -R -Fq \
+              "${sample}" \
+              results/multiqc
+          done
+
+          echo "[OK] MultiQC contains all four FASTQ inputs."
 
       - name: Show generated files
         run: |
@@ -133,13 +160,14 @@ jobs:
             -print \
           | sort
 
-      - name: Upload pipeline outputs
+      - name: Upload quality-control outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-fastqc-output
+          name: genomeops-multiqc-output
           path: |
             results/pipeline_info/
             results/fastqc/
+            results/multiqc/
             .nextflow.log
           if-no-files-found: error
           retention-days: 7
