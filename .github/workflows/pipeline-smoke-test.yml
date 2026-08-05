@@ -328,6 +328,91 @@ jobs:
 
           echo "[OK] Sorted and indexed BAM files are valid."
 
+
+      - name: Verify markdup and CRAM outputs
+        run: |
+          final_dir="results/alignment/HG002/final"
+
+          test -f \
+            "${final_dir}/HG002.markdup.bam"
+
+          test -f \
+            "${final_dir}/HG002.markdup.bam.bai"
+
+          test -f \
+            "${final_dir}/HG002.markdup.cram"
+
+          test -f \
+            "${final_dir}/HG002.markdup.cram.crai"
+
+          test -s \
+            "${final_dir}/HG002.markdup.flagstat.txt"
+
+          test -s \
+            "${final_dir}/HG002.markdup.stats.txt"
+
+          grep -Fxq \
+            "Status: OK" \
+            "${final_dir}/HG002.format-check.txt"
+
+          metrics_file="$(
+            find results/alignment/HG002/libraries \
+              -type f \
+              -name '*.markdup.metrics.txt' \
+            | head -n 1
+          )"
+
+          test -n "${metrics_file}"
+
+          grep -Fq \
+            "DUPLICATE TOTAL" \
+            "${metrics_file}"
+
+          samtools_image="$(
+            printf '%s' \
+              'quay.io/biocontainers/' \
+              'samtools:1.24--h9dcdb79_1'
+          )"
+
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "${samtools_image}" \
+            samtools quickcheck \
+              -v \
+              "${final_dir}/HG002.markdup.bam" \
+              "${final_dir}/HG002.markdup.cram"
+
+          bam_records="$(
+            docker run --rm \
+              -u "$(id -u):$(id -g)" \
+              -v "$GITHUB_WORKSPACE:/workspace" \
+              -w /workspace \
+              "${samtools_image}" \
+              samtools view \
+                -c \
+                "${final_dir}/HG002.markdup.bam"
+          )"
+
+          cram_records="$(
+            docker run --rm \
+              -u "$(id -u):$(id -g)" \
+              -v "$GITHUB_WORKSPACE:/workspace" \
+              -w /workspace \
+              "${samtools_image}" \
+              samtools view \
+                -T tests/data/reference/test_reference.fa \
+                -c \
+                "${final_dir}/HG002.markdup.cram"
+          )"
+
+          echo "BAM records: ${bam_records}"
+          echo "CRAM records: ${cram_records}"
+
+          test "${bam_records}" -eq "${cram_records}"
+
+          echo "[OK] Markdup BAM and CRAM are valid."
       - name: Show generated files
         run: |
           find results \
@@ -339,7 +424,7 @@ jobs:
       - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-sorted-bam-output
+          name: genomeops-markdup-cram-output
           path: |
             results/pipeline_info/
             results/fastqc/
