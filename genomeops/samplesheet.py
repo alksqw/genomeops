@@ -29,7 +29,9 @@ FASTQ_SUFFIXES = (
     ".fq",
 )
 
-SAFE_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SAFE_IDENTIFIER_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+)
 
 REMOTE_SCHEMES = {
     "http",
@@ -63,6 +65,29 @@ def _has_fastq_suffix(value: str) -> bool:
     return parsed_path.endswith(FASTQ_SUFFIXES)
 
 
+def _normalize_location(
+    value: str,
+    *,
+    base_dir: Path,
+) -> str:
+    """
+    Normalize a FASTQ location.
+
+    Remote locations are preserved unchanged. Relative local paths are
+    resolved against base_dir and converted to absolute paths.
+    """
+
+    if _is_remote_location(value):
+        return value
+
+    local_path = Path(value).expanduser()
+
+    if not local_path.is_absolute():
+        local_path = base_dir / local_path
+
+    return str(local_path.resolve())
+
+
 def _create_read_group(
     *,
     sample: str,
@@ -90,6 +115,7 @@ def validate_samplesheet(
     input_path: Path,
     *,
     check_files: bool = False,
+    base_dir: Path | None = None,
 ) -> list[dict[str, str]]:
     """
     Validate a GenomeOps samplesheet and return normalized rows.
@@ -103,6 +129,20 @@ def validate_samplesheet(
     if not input_path.is_file():
         raise SamplesheetValidationError(
             [f"Input samplesheet does not exist: {input_path}"]
+        )
+
+    resolved_base_dir = (
+        base_dir
+        if base_dir is not None
+        else Path.cwd()
+    ).expanduser().resolve()
+
+    if not resolved_base_dir.is_dir():
+        raise SamplesheetValidationError(
+            [
+                "FASTQ base directory does not exist "
+                f"or is not a directory: {resolved_base_dir}"
+            ]
         )
 
     normalized_rows: list[dict[str, str]] = []
@@ -125,6 +165,7 @@ def validate_samplesheet(
             header.strip() if header is not None else ""
             for header in reader.fieldnames
         ]
+
         reader.fieldnames = normalized_headers
 
         duplicate_headers = sorted(
@@ -136,7 +177,9 @@ def validate_samplesheet(
         )
 
         for header in duplicate_headers:
-            errors.append(f"Duplicate column in header: {header}")
+            errors.append(
+                f"Duplicate column in header: {header}"
+            )
 
         missing_columns = [
             column
@@ -145,19 +188,26 @@ def validate_samplesheet(
         ]
 
         for column in missing_columns:
-            errors.append(f"Missing required column: {column}")
+            errors.append(
+                f"Missing required column: {column}"
+            )
 
         if errors:
             raise SamplesheetValidationError(errors)
 
-        for row_number, raw_row in enumerate(reader, start=2):
+        for row_number, raw_row in enumerate(
+            reader,
+            start=2,
+        ):
             extra_values = raw_row.get(None)
 
             if extra_values and any(
-                str(value).strip() for value in extra_values
+                str(value).strip()
+                for value in extra_values
             ):
                 errors.append(
-                    f"Row {row_number}: contains more values than the header."
+                    f"Row {row_number}: contains more values "
+                    "than the header."
                 )
 
             row = {
@@ -166,7 +216,10 @@ def validate_samplesheet(
                 if key is not None
             }
 
-            if not any(row.get(column, "") for column in REQUIRED_COLUMNS):
+            if not any(
+                row.get(column, "")
+                for column in REQUIRED_COLUMNS
+            ):
                 continue
 
             nonempty_row_count += 1
@@ -180,7 +233,8 @@ def validate_samplesheet(
 
             for column in empty_columns:
                 errors.append(
-                    f"Row {row_number}: required value is empty: {column}"
+                    f"Row {row_number}: required value "
+                    f"is empty: {column}"
                 )
 
             sample = row.get("sample", "")
@@ -191,70 +245,133 @@ def validate_samplesheet(
             platform = row.get("platform", "").upper()
             center = row.get("center", "")
 
-            if sample and not SAFE_IDENTIFIER_PATTERN.fullmatch(sample):
+            normalized_fastq_1 = (
+                _normalize_location(
+                    fastq_1,
+                    base_dir=resolved_base_dir,
+                )
+                if fastq_1
+                else ""
+            )
+
+            normalized_fastq_2 = (
+                _normalize_location(
+                    fastq_2,
+                    base_dir=resolved_base_dir,
+                )
+                if fastq_2
+                else ""
+            )
+
+            if (
+                sample
+                and not SAFE_IDENTIFIER_PATTERN.fullmatch(sample)
+            ):
                 errors.append(
-                    f"Row {row_number}: invalid sample identifier: {sample}"
+                    f"Row {row_number}: invalid sample "
+                    f"identifier: {sample}"
                 )
 
-            if lane and not SAFE_IDENTIFIER_PATTERN.fullmatch(lane):
+            if (
+                lane
+                and not SAFE_IDENTIFIER_PATTERN.fullmatch(lane)
+            ):
                 errors.append(
-                    f"Row {row_number}: invalid lane identifier: {lane}"
+                    f"Row {row_number}: invalid lane "
+                    f"identifier: {lane}"
                 )
 
-            if platform and platform not in ALLOWED_PLATFORMS:
-                allowed = ", ".join(sorted(ALLOWED_PLATFORMS))
+            if (
+                platform
+                and platform not in ALLOWED_PLATFORMS
+            ):
+                allowed = ", ".join(
+                    sorted(ALLOWED_PLATFORMS)
+                )
+
                 errors.append(
                     f"Row {row_number}: unsupported platform "
                     f"'{platform}'. Allowed: {allowed}"
                 )
 
-            for field_name, location in (
-                ("fastq_1", fastq_1),
-                ("fastq_2", fastq_2),
-            ):
+            fastq_locations = (
+                (
+                    "fastq_1",
+                    fastq_1,
+                    normalized_fastq_1,
+                ),
+                (
+                    "fastq_2",
+                    fastq_2,
+                    normalized_fastq_2,
+                ),
+            )
+
+            for (
+                field_name,
+                location,
+                normalized_location,
+            ) in fastq_locations:
                 if not location:
                     continue
 
                 if not _has_fastq_suffix(location):
                     errors.append(
-                        f"Row {row_number}: {field_name} has an unsupported "
-                        f"FASTQ extension: {location}"
+                        f"Row {row_number}: {field_name} has "
+                        "an unsupported FASTQ extension: "
+                        f"{location}"
                     )
 
                 if (
                     check_files
                     and not _is_remote_location(location)
-                    and not Path(location).is_file()
+                    and not Path(
+                        normalized_location
+                    ).is_file()
                 ):
                     errors.append(
-                        f"Row {row_number}: local file does not exist "
-                        f"for {field_name}: {location}"
+                        f"Row {row_number}: local file does "
+                        f"not exist for {field_name}: "
+                        f"{location} "
+                        f"(resolved to: "
+                        f"{normalized_location})"
                     )
 
-            if fastq_1 and fastq_2 and fastq_1 == fastq_2:
+            if (
+                normalized_fastq_1
+                and normalized_fastq_2
+                and normalized_fastq_1
+                == normalized_fastq_2
+            ):
                 errors.append(
                     f"Row {row_number}: fastq_1 and fastq_2 "
                     "refer to the same location."
                 )
 
             if sample and lane:
-                sample_lane_key = (sample, lane)
+                sample_lane_key = (
+                    sample,
+                    lane,
+                )
 
                 if sample_lane_key in seen_sample_lanes:
                     errors.append(
-                        f"Row {row_number}: duplicate sample/lane "
-                        f"combination: {sample}/{lane}"
+                        f"Row {row_number}: duplicate "
+                        "sample/lane combination: "
+                        f"{sample}/{lane}"
                     )
                 else:
-                    seen_sample_lanes.add(sample_lane_key)
+                    seen_sample_lanes.add(
+                        sample_lane_key
+                    )
 
             if len(errors) == error_count_before_row:
                 normalized_rows.append(
                     {
                         "sample": sample,
                         "lane": lane,
-                        "fastq_1": fastq_1,
-                        "fastq_2": fastq_2,
+                        "fastq_1": normalized_fastq_1,
+                        "fastq_2": normalized_fastq_2,
                         "library": library,
                         "platform": platform,
                         "center": center,
@@ -269,7 +386,9 @@ def validate_samplesheet(
                 )
 
     if nonempty_row_count == 0:
-        errors.append("The samplesheet contains no data rows.")
+        errors.append(
+            "The samplesheet contains no data rows."
+        )
 
     if errors:
         raise SamplesheetValidationError(errors)
@@ -283,7 +402,10 @@ def write_normalized_samplesheet(
 ) -> None:
     """Write validated rows to a normalized CSV file."""
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     with output_path.open(
         mode="w",
@@ -305,7 +427,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Validate and normalize a GenomeOps FASTQ samplesheet."
+            "Validate and normalize a GenomeOps "
+            "FASTQ samplesheet."
         )
     )
 
@@ -332,10 +455,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    parser.add_argument(
+        "--base-dir",
+        type=Path,
+        default=Path.cwd(),
+        help=(
+            "Base directory used to resolve relative "
+            "local FASTQ paths. Defaults to the current "
+            "working directory."
+        ),
+    )
+
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+) -> int:
     """Run the samplesheet validator CLI."""
 
     parser = build_parser()
@@ -345,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = validate_samplesheet(
             args.input,
             check_files=args.check_files,
+            base_dir=args.base_dir,
         )
     except SamplesheetValidationError as error:
         print(
@@ -353,14 +490,27 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         for message in error.errors:
-            print(f"  - {message}", file=sys.stderr)
+            print(
+                f"  - {message}",
+                file=sys.stderr,
+            )
 
         return 1
 
-    write_normalized_samplesheet(rows, args.output)
+    write_normalized_samplesheet(
+        rows,
+        args.output,
+    )
 
-    print(f"[OK] Validated {len(rows)} samplesheet row(s).")
-    print(f"[OK] Normalized samplesheet: {args.output}")
+    print(
+        f"[OK] Validated {len(rows)} "
+        "samplesheet row(s)."
+    )
+
+    print(
+        f"[OK] Normalized samplesheet: "
+        f"{args.output}"
+    )
 
     return 0
 

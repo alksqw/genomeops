@@ -213,3 +213,45 @@ def test_normalized_samplesheet_is_written(
     assert "read_group" in output_text
     assert "HG002" in output_text
     assert "ILLUMINA" in output_text
+
+def test_relative_files_are_resolved_against_base_dir(
+    tmp_path: Path,
+) -> None:
+    reads_dir = tmp_path / "reads"
+    reads_dir.mkdir()
+
+    fastq_1 = reads_dir / "sample_R1.fastq"
+    fastq_2 = reads_dir / "sample_R2.fastq"
+
+    fastq_text = (
+        "@read1\n"
+        "ACGT\n"
+        "+\n"
+        "IIII\n"
+    )
+
+    fastq_1.write_text(
+        fastq_text,
+        encoding="utf-8",
+    )
+
+    fastq_2.write_text(
+        fastq_text,
+        encoding="utf-8",
+    )
+
+    row = valid_row()
+    row["fastq_1"] = "reads/sample_R1.fastq"
+    row["fastq_2"] = "reads/sample_R2.fastq"
+
+    input_path = tmp_path / "samplesheet.csv"
+    write_test_samplesheet(input_path, [row])
+
+    rows = validate_samplesheet(
+        input_path,
+        check_files=True,
+        base_dir=tmp_path,
+    )
+
+    assert rows[0]["fastq_1"] == str(fastq_1.resolve())
+    assert rows[0]["fastq_2"] == str(fastq_2.resolve())
