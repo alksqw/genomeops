@@ -49,11 +49,45 @@ process SUMMARIZE_SAMPLESHEET {
 }
 
 
+process FASTQC {
+
+    tag "${meta.sample}/${meta.lane}"
+
+    label 'process_low'
+
+    container 'quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0'
+
+    publishDir {
+        "${params.outdir}/fastqc/${meta.sample}/${meta.lane}"
+    }, mode: 'copy', overwrite: true
+
+    input:
+    tuple val(meta), path(reads)
+
+    output:
+    tuple val(meta), path('*_fastqc.html'), emit: html
+
+    tuple val(meta), path('*_fastqc.zip'), emit: zip
+
+    path 'fastqc.version.txt', emit: version
+
+    script:
+    """
+    fastqc \
+        --threads ${task.cpus} \
+        --outdir . \
+        ${reads.join(' ')}
+
+    fastqc --version > fastqc.version.txt
+    """
+}
+
+
 workflow {
 
     if (!params.input) {
         error(
-            "Missing required parameter: --input\n" + "Example:\n" + "nextflow run main.nf " + "--input assets/samplesheet.example.csv"
+            "Missing required parameter: --input\n" + "Example:\n" + "nextflow run main.nf " + "--input assets/samplesheet.example.csv " + "-profile docker"
         )
     }
 
@@ -64,7 +98,28 @@ workflow {
 
     VALIDATE_SAMPLESHEET(input_samplesheet_ch)
 
+    validated_samplesheet_ch = VALIDATE_SAMPLESHEET.out.validated_samplesheet
+
     SUMMARIZE_SAMPLESHEET(
-        VALIDATE_SAMPLESHEET.out.validated_samplesheet
+        validated_samplesheet_ch
     )
+
+    fastq_pairs_ch = validated_samplesheet_ch
+        .splitCsv(header: true)
+        .map { row ->
+
+            def meta = [id: "${row.sample}.${row.lane}", sample: row.sample, lane: row.lane, library: row.library, platform: row.platform, center: row.center]
+
+            def reads = [file(
+                row.fastq_1,
+                checkIfExists: true
+            ), file(
+                row.fastq_2,
+                checkIfExists: true
+            )]
+
+            tuple(meta, reads)
+        }
+
+    FASTQC(fastq_pairs_ch)
 }

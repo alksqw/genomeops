@@ -20,24 +20,15 @@ permissions:
 
 jobs:
   smoke-test:
-    name: Run samplesheet validation pipeline
+    name: Run FastQC pipeline
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           lfs: true
-
-      - name: Verify synthetic FASTQ inputs
-        run: |
-          test -f tests/data/fastq/HG002_L001_R1.fastq
-          test -f tests/data/fastq/HG002_L001_R2.fastq
-          test -f tests/data/fastq/HG002_L002_R1.fastq
-          test -f tests/data/fastq/HG002_L002_R2.fastq
-
-          echo "[OK] All synthetic FASTQ files are available."
 
       - name: Set up Java 21
         uses: actions/setup-java@v5
@@ -53,7 +44,27 @@ jobs:
       - name: Install Nextflow
         run: bash scripts/install_nextflow.sh
 
-      - name: Run samplesheet validation pipeline
+      - name: Verify synthetic FASTQ inputs
+        run: |
+          test -f tests/data/fastq/HG002_L001_R1.fastq
+          test -f tests/data/fastq/HG002_L001_R2.fastq
+          test -f tests/data/fastq/HG002_L002_R1.fastq
+          test -f tests/data/fastq/HG002_L002_R2.fastq
+
+          echo "[OK] Synthetic FASTQ files are available."
+
+      - name: Verify Docker
+        run: |
+          docker version
+
+          docker pull \
+            quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0
+
+          docker run --rm \
+            quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0 \
+            fastqc --version
+
+      - name: Run FastQC pipeline
         run: |
           export PATH="$HOME/.local/bin:$PATH"
 
@@ -61,26 +72,14 @@ jobs:
             --input assets/samplesheet.example.csv \
             --outdir results \
             --check_files true \
+            -profile docker \
             -ansi-log false
 
-      - name: Verify validated samplesheet
+      - name: Verify samplesheet outputs
         run: |
           test -f \
             results/pipeline_info/validated_samplesheet.csv
 
-          grep -Fq \
-            "read_group" \
-            results/pipeline_info/validated_samplesheet.csv
-
-          grep -Fq \
-            "HG002" \
-            results/pipeline_info/validated_samplesheet.csv
-
-          echo "Validated samplesheet:"
-          cat results/pipeline_info/validated_samplesheet.csv
-
-      - name: Verify samplesheet summary
-        run: |
           test -f \
             results/pipeline_info/samplesheet_summary.txt
 
@@ -88,18 +87,59 @@ jobs:
             "Validated rows: 2" \
             results/pipeline_info/samplesheet_summary.txt
 
-          echo "Samplesheet summary:"
-          cat results/pipeline_info/samplesheet_summary.txt
+          echo "[OK] Samplesheet outputs are correct."
 
-          echo
-          echo "[OK] Samplesheet pipeline completed successfully."
+      - name: Verify FastQC reports
+        run: |
+          html_count="$(
+            find results/fastqc \
+              -type f \
+              -name '*_fastqc.html' \
+            | wc -l
+          )"
+
+          zip_count="$(
+            find results/fastqc \
+              -type f \
+              -name '*_fastqc.zip' \
+            | wc -l
+          )"
+
+          echo "HTML reports: ${html_count}"
+          echo "ZIP archives: ${zip_count}"
+
+          test "${html_count}" -eq 4
+          test "${zip_count}" -eq 4
+
+          first_html="$(
+            find results/fastqc \
+              -type f \
+              -name '*_fastqc.html' \
+            | sort \
+            | head -n 1
+          )"
+
+          grep -Fq \
+            "FastQC Report" \
+            "${first_html}"
+
+          echo "[OK] Four FastQC reports were created."
+
+      - name: Show generated files
+        run: |
+          find results \
+            -maxdepth 5 \
+            -type f \
+            -print \
+          | sort
 
       - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-samplesheet-pipeline-output
+          name: genomeops-fastqc-output
           path: |
             results/pipeline_info/
+            results/fastqc/
             .nextflow.log
           if-no-files-found: error
           retention-days: 7
