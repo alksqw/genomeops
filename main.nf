@@ -124,25 +124,15 @@ process PREPARE_REFERENCE_METADATA {
 
     container 'quay.io/biocontainers/samtools:1.24--h9dcdb79_1'
 
-    publishDir "${params.outdir}/reference/core",
-        mode: 'copy',
-        overwrite: true
+    publishDir "${params.outdir}/reference/core", mode: 'copy', overwrite: true
 
     input:
     path reference
 
     output:
-    tuple path(reference),
-        path("${reference.name}.fai"),
-        path("${reference.simpleName}.dict"),
-        path('reference.contigs.tsv'),
-        path('reference.dictionary.contigs.tsv'),
-        path('reference.validation.tsv'),
-        path('reference.sha256'),
-        emit: bundle
+    tuple path(reference), path("${reference.name}.fai"), path("${reference.simpleName}.dict"), path('reference.contigs.tsv'), path('reference.dictionary.contigs.tsv'), path('reference.validation.tsv'), path('reference.sha256'), emit: bundle
 
-    path 'samtools.reference.version.txt',
-        emit: version
+    path 'samtools.reference.version.txt', emit: version
 
     script:
     def dictName = "${reference.simpleName}.dict"
@@ -311,34 +301,24 @@ process SAMTOOLS_SORT_INDEX_QC {
     container 'quay.io/biocontainers/samtools:1.24--h9dcdb79_1'
 
     publishDir {
-        "${params.outdir}/alignment/" +
-        "${meta.sample}/${meta.lane}"
-    },
-        mode: 'copy',
-        overwrite: true
+        "${params.outdir}/alignment/" + "${meta.sample}/${meta.lane}"
+    }, mode: 'copy', overwrite: true
 
     input:
     tuple val(meta), path(sam)
 
     output:
-    tuple val(meta), path("${meta.id}.sorted.bam"),
-        path("${meta.id}.sorted.bam.bai"),
-        emit: bam
+    tuple val(meta), path("${meta.id}.sorted.bam"), path("${meta.id}.sorted.bam.bai"), emit: bam
 
-    tuple val(meta), path("${meta.id}.flagstat.txt"),
-        emit: flagstat
+    tuple val(meta), path("${meta.id}.flagstat.txt"), emit: flagstat
 
-    tuple val(meta), path("${meta.id}.idxstats.txt"),
-        emit: idxstats
+    tuple val(meta), path("${meta.id}.idxstats.txt"), emit: idxstats
 
-    tuple val(meta), path("${meta.id}.stats.txt"),
-        emit: stats
+    tuple val(meta), path("${meta.id}.stats.txt"), emit: stats
 
-    tuple val(meta), path("${meta.id}.quickcheck.txt"),
-        emit: quickcheck
+    tuple val(meta), path("${meta.id}.quickcheck.txt"), emit: quickcheck
 
-    path 'samtools.version.txt',
-        emit: version
+    path 'samtools.version.txt', emit: version
 
     script:
     """
@@ -387,27 +367,18 @@ process SAMTOOLS_MARKDUP_LIBRARY {
     container 'quay.io/biocontainers/samtools:1.24--h9dcdb79_1'
 
     publishDir {
-        "${params.outdir}/alignment/" +
-        "${meta.sample}/libraries/${meta.library}"
-    },
-        mode: 'copy',
-        overwrite: true,
-        pattern: '*.txt'
+        "${params.outdir}/alignment/" + "${meta.sample}/libraries/${meta.library}"
+    }, mode: 'copy', overwrite: true, pattern: '*.txt'
 
     input:
     tuple val(meta), path(lane_bams)
 
     output:
-    tuple val(meta),
-        path("${meta.sample}.${meta.library}.markdup.bam"),
-        emit: bam
+    tuple val(meta), path("${meta.sample}.${meta.library}.markdup.bam"), emit: bam
 
-    tuple val(meta),
-        path("${meta.sample}.${meta.library}.markdup.metrics.txt"),
-        emit: metrics
+    tuple val(meta), path("${meta.sample}.${meta.library}.markdup.metrics.txt"), emit: metrics
 
-    path 'samtools.markdup.version.txt',
-        emit: version
+    path 'samtools.markdup.version.txt', emit: version
 
     script:
     def bamList = lane_bams instanceof List
@@ -470,40 +441,23 @@ process SAMTOOLS_FINALIZE_SAMPLE {
 
     publishDir {
         "${params.outdir}/alignment/${sample}/final"
-    },
-        mode: 'copy',
-        overwrite: true
+    }, mode: 'copy', overwrite: true
 
     input:
-    tuple val(sample),
-        path(library_bams),
-        path(reference)
+    tuple val(sample), path(library_bams), path(reference)
 
     output:
-    tuple val(sample),
-        path("${sample}.markdup.bam"),
-        path("${sample}.markdup.bam.bai"),
-        emit: bam
+    tuple val(sample), path("${sample}.markdup.bam"), path("${sample}.markdup.bam.bai"), emit: bam
 
-    tuple val(sample),
-        path("${sample}.markdup.cram"),
-        path("${sample}.markdup.cram.crai"),
-        emit: cram
+    tuple val(sample), path("${sample}.markdup.cram"), path("${sample}.markdup.cram.crai"), emit: cram
 
-    tuple val(sample),
-        path("${sample}.markdup.flagstat.txt"),
-        emit: flagstat
+    tuple val(sample), path("${sample}.markdup.flagstat.txt"), emit: flagstat
 
-    tuple val(sample),
-        path("${sample}.markdup.stats.txt"),
-        emit: stats
+    tuple val(sample), path("${sample}.markdup.stats.txt"), emit: stats
 
-    tuple val(sample),
-        path("${sample}.format-check.txt"),
-        emit: check
+    tuple val(sample), path("${sample}.format-check.txt"), emit: check
 
-    path 'samtools.final.version.txt',
-        emit: version
+    path 'samtools.final.version.txt', emit: version
 
     script:
     def bamList = library_bams instanceof List
@@ -589,37 +543,19 @@ process CHECK_REFERENCE_COMPATIBILITY {
 
     publishDir {
         "${params.outdir}/reference/validation/${sample}"
-    },
-        mode: 'copy',
-        overwrite: true
+    }, mode: 'copy', overwrite: true
 
     input:
-    tuple val(sample),
-        path(bam),
-        path(bai),
-        path(reference),
-        path(fai),
-        path(dict),
-        path(reference_contigs),
-        path(dictionary_contigs),
-        path(metadata_validation),
-        path(checksums)
+    tuple val(sample), path(bam), path(bai), path(reference), path(fai), path(dict), path(reference_contigs), path(dictionary_contigs), path(metadata_validation), path(checksums)
 
     output:
-    tuple val(sample),
-        path("${sample}.reference-compatibility.tsv"),
-        emit: report
+    tuple val(sample), path("${sample}.reference-compatibility.tsv"), emit: report
 
-    tuple val(sample),
-        path("${sample}.bam.contigs.tsv"),
-        emit: bam_contigs
+    tuple val(sample), path("${sample}.bam.contigs.tsv"), emit: bam_contigs
 
-    tuple val(sample),
-        path("${sample}.reference-checksums.txt"),
-        emit: checksum_report
+    tuple val(sample), path("${sample}.reference-checksums.txt"), emit: checksum_report
 
-    path 'samtools.compatibility.version.txt',
-        emit: version
+    path 'samtools.compatibility.version.txt', emit: version
 
     script:
     """
@@ -704,6 +640,229 @@ process CHECK_REFERENCE_COMPATIBILITY {
     """
 }
 
+process DEEPVARIANT_CALL {
+
+    tag "${sample}"
+
+    label 'process_deepvariant'
+
+    container 'google/deepvariant:1.10.0'
+
+    publishDir {
+        "${params.outdir}/variants/" + "${sample}/deepvariant"
+    }, mode: 'copy', overwrite: true
+
+    input:
+    tuple val(sample), path(bam), path(bai), path(reference), path(fai)
+
+    output:
+    tuple val(sample), path("${sample}.deepvariant.vcf.gz"), path("${sample}.deepvariant.vcf.gz.tbi"), path("${sample}.deepvariant.g.vcf.gz"), path("${sample}.deepvariant.g.vcf.gz.tbi"), emit: variants
+
+    tuple val(sample), path("${sample}.deepvariant.provenance.txt"), emit: provenance
+
+    script:
+    def regionsArgument = params.deepvariant_regions
+        ? "--regions=\"${params.deepvariant_regions}\""
+        : ''
+
+    """
+    set -euo pipefail
+
+    /opt/deepvariant/bin/run_deepvariant \
+        --model_type="${params.deepvariant_model_type}" \
+        --ref="${reference}" \
+        --reads="${bam}" \
+        --output_vcf="${sample}.deepvariant.vcf.gz" \
+        --output_gvcf="${sample}.deepvariant.g.vcf.gz" \
+        --num_shards=${task.cpus} \
+        --vcf_stats_report=false \
+        ${regionsArgument}
+
+    {
+        echo "container=google/deepvariant:1.10.0"
+        echo "model_type=${params.deepvariant_model_type}"
+        echo "regions=${params.deepvariant_regions}"
+        echo "num_shards=${task.cpus}"
+    } > "${sample}.deepvariant.provenance.txt"
+    """
+}
+
+process VERIFY_DEEPVARIANT_TRUTH {
+
+    tag "${sample}"
+
+    label 'process_low'
+
+    container 'python:3.12.13-slim-bookworm'
+
+    publishDir {
+        "${params.outdir}/variants/" + "${sample}/validation"
+    }, mode: 'copy', overwrite: true
+
+    input:
+    tuple val(sample), path(vcf), path(vcf_index), path(gvcf), path(gvcf_index), path(truth_vcf)
+
+    output:
+    tuple val(sample), path(
+        "${sample}.deepvariant-truth-check.tsv"
+    ), emit: report
+
+    script:
+    """
+    set -euo pipefail
+
+    python - \
+        "${vcf}" \
+        "${truth_vcf}" \
+        "${sample}.deepvariant-truth-check.tsv" \
+    <<'PY'
+    from __future__ import annotations
+
+    import gzip
+    import sys
+    from pathlib import Path
+
+
+    called_path = Path(sys.argv[1])
+    truth_path = Path(sys.argv[2])
+    output_path = Path(sys.argv[3])
+
+
+    def read_vcf_records(
+        path: Path,
+    ) -> list[list[str]]:
+        opener = (
+            gzip.open
+            if path.suffix == ".gz"
+            else open
+        )
+
+        mode = (
+            "rt"
+            if path.suffix == ".gz"
+            else "r"
+        )
+
+        with opener(
+            path,
+            mode,
+            encoding="utf-8",
+        ) as handle:
+            return [
+                line.rstrip("\\n").split("\\t")
+                for line in handle
+                if line and not line.startswith("#")
+            ]
+
+
+    truth_records = read_vcf_records(
+        truth_path
+    )
+    called_records = read_vcf_records(
+        called_path
+    )
+
+    if len(truth_records) != 1:
+        raise RuntimeError(
+            "Expected exactly one truth record, "
+            f"found {len(truth_records)}."
+        )
+
+    truth = truth_records[0]
+
+    truth_chrom = truth[0]
+    truth_position = truth[1]
+    truth_ref = truth[3]
+    truth_alt = truth[4]
+
+    matching_records = []
+
+    for record in called_records:
+        called_alts = record[4].split(",")
+
+        if (
+            record[0] == truth_chrom
+            and record[1] == truth_position
+            and record[3] == truth_ref
+            and truth_alt in called_alts
+        ):
+            matching_records.append(record)
+
+    if not matching_records:
+        raise RuntimeError(
+            "DeepVariant did not call the expected "
+            f"variant {truth_chrom}:"
+            f"{truth_position} "
+            f"{truth_ref}>{truth_alt}."
+        )
+
+    called = matching_records[0]
+    called_filter = called[6]
+    called_qual = called[5]
+    called_genotype = "UNKNOWN"
+
+    if len(called) >= 10:
+        format_keys = called[8].split(":")
+        sample_values = called[9].split(":")
+
+        if "GT" in format_keys:
+            genotype_index = format_keys.index(
+                "GT"
+            )
+
+            if genotype_index < len(
+                sample_values
+            ):
+                called_genotype = (
+                    sample_values[
+                        genotype_index
+                    ]
+                )
+
+    non_reference_genotypes = {
+        "0/1",
+        "1/0",
+        "0|1",
+        "1|0",
+        "1/1",
+        "1|1",
+    }
+
+    if called_genotype not in (
+        non_reference_genotypes
+    ):
+        raise RuntimeError(
+            "Expected a non-reference genotype, "
+            f"found {called_genotype}."
+        )
+
+    output_path.write_text(
+        "check\\tstatus\\n"
+        "expected_variant\\tPASS\\n"
+        "non_reference_genotype\\tPASS\\n"
+        f"chrom\\t{truth_chrom}\\n"
+        f"position\\t{truth_position}\\n"
+        f"ref\\t{truth_ref}\\n"
+        f"alt\\t{truth_alt}\\n"
+        f"called_filter\\t{called_filter}\\n"
+        f"called_qual\\t{called_qual}\\n"
+        f"called_genotype\\t"
+        f"{called_genotype}\\n",
+        encoding="utf-8",
+    )
+
+    print(
+        "[OK] DeepVariant detected "
+        f"{truth_chrom}:"
+        f"{truth_position} "
+        f"{truth_ref}>{truth_alt} "
+        f"with genotype "
+        f"{called_genotype}."
+    )
+    PY
+    """
+}
+
 workflow {
 
     if (!params.input) {
@@ -737,6 +896,19 @@ workflow {
         params.reference,
         checkIfExists: true
     )
+
+    if (params.run_deepvariant) {
+        if (!params.truth_vcf) {
+            error(
+                "Missing required parameter: --truth_vcf " + "when --run_deepvariant is enabled."
+            )
+        }
+
+        truth_vcf_ch = Channel.fromPath(
+            params.truth_vcf,
+            checkIfExists: true
+        )
+    }
 
     VALIDATE_SAMPLESHEET(
         input_samplesheet_ch
@@ -792,25 +964,22 @@ workflow {
         BWA_MEM2_INDEX.out.indexed_reference
     )
 
-        BWA_MEM2_ALIGN(
+    BWA_MEM2_ALIGN(
         alignment_inputs_ch
     )
 
-        SAMTOOLS_SORT_INDEX_QC(
+    SAMTOOLS_SORT_INDEX_QC(
         BWA_MEM2_ALIGN.out.sam
     )
 
     library_bams_ch = SAMTOOLS_SORT_INDEX_QC.out.bam
         .map { laneMeta, bam, bai ->
 
-            def libraryMeta = [
-                sample: laneMeta.sample,
-                library: laneMeta.library
-            ]
+            def libraryMeta = [sample: laneMeta.sample, library: laneMeta.library]
 
             tuple(
                 libraryMeta,
-                bam
+                bam,
             )
         }
         .groupTuple()
@@ -823,25 +992,52 @@ workflow {
         .map { libraryMeta, bam ->
             tuple(
                 libraryMeta.sample,
-                bam
+                bam,
             )
         }
         .groupTuple()
 
-    sample_finalize_inputs_ch = sample_bams_ch
-        .combine(reference_for_cram_ch)
+    sample_finalize_inputs_ch = sample_bams_ch.combine(reference_for_cram_ch)
 
-        SAMTOOLS_FINALIZE_SAMPLE(
+    SAMTOOLS_FINALIZE_SAMPLE(
         sample_finalize_inputs_ch
     )
 
-    reference_compatibility_inputs_ch =
-        SAMTOOLS_FINALIZE_SAMPLE.out.bam
-            .combine(
-                PREPARE_REFERENCE_METADATA.out.bundle
-            )
+    reference_compatibility_inputs_ch = SAMTOOLS_FINALIZE_SAMPLE.out.bam.combine(
+        PREPARE_REFERENCE_METADATA.out.bundle
+    )
 
     CHECK_REFERENCE_COMPATIBILITY(
         reference_compatibility_inputs_ch
     )
+
+    if (params.run_deepvariant) {
+
+        deepvariant_inputs_ch = SAMTOOLS_FINALIZE_SAMPLE.out.bam
+            .combine(
+                PREPARE_REFERENCE_METADATA.out.bundle
+            )
+            .map { sample, bam, bai, reference, fai, dict, referenceContigs, dictionaryContigs, metadataValidation, checksums ->
+
+                tuple(
+                    sample,
+                    bam,
+                    bai,
+                    reference,
+                    fai,
+                )
+            }
+
+        DEEPVARIANT_CALL(
+            deepvariant_inputs_ch
+        )
+
+        deepvariant_truth_inputs_ch = DEEPVARIANT_CALL.out.variants.combine(
+            truth_vcf_ch
+        )
+
+        VERIFY_DEEPVARIANT_TRUTH(
+            deepvariant_truth_inputs_ch
+        )
+    }
 }

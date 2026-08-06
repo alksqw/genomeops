@@ -1,0 +1,2 @@
+chrom	position	ref	alt	genotype
+chrTest	5000	T	A	0/1

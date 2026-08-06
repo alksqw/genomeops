@@ -1,0 +1,147 @@
+name: DeepVariant Smoke Test
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deepvariant-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deepvariant:
+    name: Call synthetic SNP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          lfs: true
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Nextflow
+        run: bash scripts/install_nextflow.sh
+
+      - name: Verify AVX support
+        run: |
+          if grep -qw avx /proc/cpuinfo
+          then
+            echo "[OK] AVX is available."
+          else
+            echo "[ERROR] AVX is unavailable." >&2
+            exit 1
+          fi
+
+      - name: Verify deterministic test data
+        run: |
+          python scripts/generate_synthetic_variant_data.py
+
+          test -f tests/data/reference/test_reference.fa
+          test -f tests/data/variants/synthetic_truth.vcf
+
+          for fastq in tests/data/fastq/*.fastq
+          do
+            reads="$(
+              awk 'END { print NR / 4 }' "${fastq}"
+            )"
+
+            test "${reads}" -eq 30
+          done
+
+          echo "[OK] Synthetic variant data are valid."
+
+      - name: Pull DeepVariant container
+        run: |
+          docker pull google/deepvariant:1.10.0
+
+          docker run --rm \
+            google/deepvariant:1.10.0 \
+            test -x /opt/deepvariant/bin/run_deepvariant
+
+      - name: Run GenomeOps with DeepVariant
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+
+          nextflow run main.nf \
+            --input assets/samplesheet.example.csv \
+            --reference tests/data/reference/test_reference.fa \
+            --truth_vcf tests/data/variants/synthetic_truth.vcf \
+            --reference_assembly test \
+            --reference_species synthetic \
+            --outdir results \
+            --check_files true \
+            --run_deepvariant true \
+            --deepvariant_model_type WGS \
+            --deepvariant_regions chrTest:1-10000 \
+            -profile docker \
+            -ansi-log false
+
+      - name: Verify DeepVariant outputs
+        run: |
+          variant_dir="results/variants/HG002/deepvariant"
+          validation_dir="results/variants/HG002/validation"
+
+          test -f \
+            "${variant_dir}/HG002.deepvariant.vcf.gz"
+
+          test -f \
+            "${variant_dir}/HG002.deepvariant.vcf.gz.tbi"
+
+          test -f \
+            "${variant_dir}/HG002.deepvariant.g.vcf.gz"
+
+          test -f \
+            "${variant_dir}/HG002.deepvariant.g.vcf.gz.tbi"
+
+          report="$(
+            printf '%s' \
+              "${validation_dir}/" \
+              "HG002.deepvariant-truth-check.tsv"
+          )"
+
+          test -f "${report}"
+
+          grep -Fq \
+            $'expected_variant\tPASS' \
+            "${report}"
+
+          grep -Fq \
+            $'non_reference_genotype\tPASS' \
+            "${report}"
+
+          echo "Truth validation:"
+          cat "${report}"
+
+          echo "[OK] Synthetic SNP was detected."
+
+      - name: Show variant records
+        run: |
+          gzip -dc \
+            results/variants/HG002/deepvariant/HG002.deepvariant.vcf.gz \
+          | grep -v '^#'
+
+      - name: Upload DeepVariant outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: genomeops-deepvariant-output
+          path: |
+            results/variants/
+            results/reference/validation/
+            results/alignment/HG002/final/
+            .nextflow.log
+          if-no-files-found: error
+          retention-days: 7
