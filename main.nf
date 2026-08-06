@@ -116,6 +116,120 @@ process MULTIQC {
     """
 }
 
+process PREPARE_REFERENCE_METADATA {
+
+    tag "${reference.simpleName}"
+
+    label 'process_medium'
+
+    container 'quay.io/biocontainers/samtools:1.24--h9dcdb79_1'
+
+    publishDir "${params.outdir}/reference/core",
+        mode: 'copy',
+        overwrite: true
+
+    input:
+    path reference
+
+    output:
+    tuple path(reference),
+        path("${reference.name}.fai"),
+        path("${reference.simpleName}.dict"),
+        path('reference.contigs.tsv'),
+        path('reference.dictionary.contigs.tsv'),
+        path('reference.validation.tsv'),
+        path('reference.sha256'),
+        emit: bundle
+
+    path 'samtools.reference.version.txt',
+        emit: version
+
+    script:
+    def dictName = "${reference.simpleName}.dict"
+
+    """
+    set -euo pipefail
+
+    rm -f \
+        "${reference}.fai" \
+        "${dictName}"
+
+    samtools faidx \
+        "${reference}"
+
+    samtools dict \
+        -a "${params.reference_assembly}" \
+        -s "${params.reference_species}" \
+        -u "${reference.name}" \
+        -o "${dictName}" \
+        "${reference}"
+
+    cut \
+        -f 1,2 \
+        "${reference}.fai" \
+        > reference.contigs.tsv
+
+    awk -F '\\t' '
+        \$1 == "@SQ" {
+            name = ""
+            seq_length = ""
+
+            for (i = 2; i <= NF; i++) {
+                if (\$i ~ /^SN:/) {
+                    name = substr(\$i, 4)
+                }
+
+                if (\$i ~ /^LN:/) {
+                    seq_length = substr(\$i, 4)
+                }
+            }
+
+            print name "\\t" seq_length
+        }
+    ' "${dictName}" \
+        > reference.dictionary.contigs.tsv
+
+    diff \
+        -u \
+        reference.contigs.tsv \
+        reference.dictionary.contigs.tsv \
+        > reference.dictionary.diff \
+    || {
+        echo "[ERROR] FASTA index and dictionary differ." >&2
+        cat reference.dictionary.diff >&2
+        exit 1
+    }
+
+    sequence_count=\$(
+        wc \
+            -l \
+            < reference.contigs.tsv
+    )
+
+    {
+        printf 'check\\tstatus\\n'
+        printf 'fai_vs_dictionary\\tPASS\\n'
+        printf 'sequence_count\\t%s\\n' \
+            "\${sequence_count}"
+        printf 'assembly\\t%s\\n' \
+            "${params.reference_assembly}"
+        printf 'species\\t%s\\n' \
+            "${params.reference_species}"
+    } > reference.validation.tsv
+
+    sha256sum \
+        "${reference}" \
+        "${reference}.fai" \
+        "${dictName}" \
+        reference.contigs.tsv \
+        reference.dictionary.contigs.tsv \
+        reference.validation.tsv \
+        > reference.sha256
+
+    samtools --version \
+        > samtools.reference.version.txt
+    """
+}
 
 process BWA_MEM2_INDEX {
 
@@ -465,6 +579,131 @@ process SAMTOOLS_FINALIZE_SAMPLE {
     """
 }
 
+process CHECK_REFERENCE_COMPATIBILITY {
+
+    tag "${sample}"
+
+    label 'process_low'
+
+    container 'quay.io/biocontainers/samtools:1.24--h9dcdb79_1'
+
+    publishDir {
+        "${params.outdir}/reference/validation/${sample}"
+    },
+        mode: 'copy',
+        overwrite: true
+
+    input:
+    tuple val(sample),
+        path(bam),
+        path(bai),
+        path(reference),
+        path(fai),
+        path(dict),
+        path(reference_contigs),
+        path(dictionary_contigs),
+        path(metadata_validation),
+        path(checksums)
+
+    output:
+    tuple val(sample),
+        path("${sample}.reference-compatibility.tsv"),
+        emit: report
+
+    tuple val(sample),
+        path("${sample}.bam.contigs.tsv"),
+        emit: bam_contigs
+
+    tuple val(sample),
+        path("${sample}.reference-checksums.txt"),
+        emit: checksum_report
+
+    path 'samtools.compatibility.version.txt',
+        emit: version
+
+    script:
+    """
+    set -euo pipefail
+
+    samtools quickcheck \
+        -v \
+        "${bam}"
+
+    samtools idxstats \
+        "${bam}" \
+        > /dev/null
+
+    samtools view \
+        -H \
+        "${bam}" \
+    | awk -F '\\t' '
+        \$1 == "@SQ" {
+            name = ""
+            seq_length = ""
+
+            for (i = 2; i <= NF; i++) {
+                if (\$i ~ /^SN:/) {
+                    name = substr(\$i, 4)
+                }
+
+                if (\$i ~ /^LN:/) {
+                    seq_length = substr(\$i, 4)
+                }
+            }
+
+            print name "\\t" seq_length
+        }
+    ' > "${sample}.bam.contigs.tsv"
+
+    diff \
+        -u \
+        "${reference_contigs}" \
+        "${sample}.bam.contigs.tsv" \
+        > "${sample}.reference-contigs.diff" \
+    || {
+        echo "[ERROR] BAM and reference contigs differ." >&2
+        cat "${sample}.reference-contigs.diff" >&2
+        exit 1
+    }
+
+    sha256sum \
+        -c \
+        "${checksums}" \
+        > "${sample}.reference-checksums.txt"
+
+    reference_sequences=\$(
+        wc \
+            -l \
+            < "${reference_contigs}"
+    )
+
+    bam_sequences=\$(
+        wc \
+            -l \
+            < "${sample}.bam.contigs.tsv"
+    )
+
+    test \
+        "\${reference_sequences}" \
+        -eq \
+        "\${bam_sequences}"
+
+    {
+        printf 'check\\tstatus\\n'
+        printf 'fai_vs_dictionary\\tPASS\\n'
+        printf 'fai_vs_bam_header\\tPASS\\n'
+        printf 'reference_checksums\\tPASS\\n'
+        printf 'bam_quickcheck\\tPASS\\n'
+        printf 'bam_index\\tPASS\\n'
+        printf 'sequence_count\\t%s\\n' \
+            "\${reference_sequences}"
+    } > "${sample}.reference-compatibility.tsv"
+
+    samtools --version \
+        > samtools.compatibility.version.txt
+    """
+}
+
 workflow {
 
     if (!params.input) {
@@ -494,8 +733,17 @@ workflow {
         checkIfExists: true
     )
 
+    reference_metadata_ch = Channel.fromPath(
+        params.reference,
+        checkIfExists: true
+    )
+
     VALIDATE_SAMPLESHEET(
         input_samplesheet_ch
+    )
+
+    PREPARE_REFERENCE_METADATA(
+        reference_metadata_ch
     )
 
     BWA_MEM2_INDEX(
@@ -583,7 +831,17 @@ workflow {
     sample_finalize_inputs_ch = sample_bams_ch
         .combine(reference_for_cram_ch)
 
-    SAMTOOLS_FINALIZE_SAMPLE(
+        SAMTOOLS_FINALIZE_SAMPLE(
         sample_finalize_inputs_ch
+    )
+
+    reference_compatibility_inputs_ch =
+        SAMTOOLS_FINALIZE_SAMPLE.out.bam
+            .combine(
+                PREPARE_REFERENCE_METADATA.out.bundle
+            )
+
+    CHECK_REFERENCE_COMPATIBILITY(
+        reference_compatibility_inputs_ch
     )
 }

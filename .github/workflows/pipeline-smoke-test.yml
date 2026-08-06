@@ -328,7 +328,6 @@ jobs:
 
           echo "[OK] Sorted and indexed BAM files are valid."
 
-
       - name: Verify markdup and CRAM outputs
         run: |
           final_dir="results/alignment/HG002/final"
@@ -413,6 +412,84 @@ jobs:
           test "${bam_records}" -eq "${cram_records}"
 
           echo "[OK] Markdup BAM and CRAM are valid."
+
+      - name: Verify reference bundle
+        run: |
+          reference_dir="results/reference/core"
+
+          test -f \
+            "${reference_dir}/test_reference.fa"
+
+          test -f \
+            "${reference_dir}/test_reference.fa.fai"
+
+          test -f \
+            "${reference_dir}/test_reference.dict"
+
+          test -f \
+            "${reference_dir}/reference.contigs.tsv"
+
+          test -f \
+            "${reference_dir}/reference.dictionary.contigs.tsv"
+
+          test -f \
+            "${reference_dir}/reference.validation.tsv"
+
+          test -f \
+            "${reference_dir}/reference.sha256"
+
+          grep -Fq \
+            "SN:chrTest" \
+            "${reference_dir}/test_reference.dict"
+
+          grep -Fq \
+            "AS:test" \
+            "${reference_dir}/test_reference.dict"
+
+          grep -Fq \
+            "SP:synthetic" \
+            "${reference_dir}/test_reference.dict"
+
+          grep -Fq \
+            "fai_vs_dictionary" \
+            "${reference_dir}/reference.validation.tsv"
+
+          (
+            cd "${reference_dir}"
+            sha256sum -c reference.sha256
+          )
+
+          compatibility_dir="$(
+            printf '%s' \
+              'results/reference/validation/HG002'
+          )"
+
+          test -f \
+            "${compatibility_dir}/HG002.reference-compatibility.tsv"
+
+          test -f \
+            "${compatibility_dir}/HG002.bam.contigs.tsv"
+
+          test -f \
+            "${compatibility_dir}/HG002.reference-checksums.txt"
+
+          grep -Fq \
+            "fai_vs_bam_header" \
+            "${compatibility_dir}/HG002.reference-compatibility.tsv"
+
+          grep -Fq \
+            "reference_checksums" \
+            "${compatibility_dir}/HG002.reference-compatibility.tsv"
+
+          if grep -Fq \
+            "FAIL" \
+            "${compatibility_dir}/HG002.reference-compatibility.tsv"
+          then
+            echo "[ERROR] Reference compatibility failed." >&2
+            exit 1
+          fi
+
+          echo "[OK] Reference bundle is valid."
       - name: Show generated files
         run: |
           find results \
@@ -424,7 +501,7 @@ jobs:
       - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
-          name: genomeops-markdup-cram-output
+          name: genomeops-reference-bundle-output
           path: |
             results/pipeline_info/
             results/fastqc/
